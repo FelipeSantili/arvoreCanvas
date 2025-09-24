@@ -106,19 +106,19 @@ class funcoes{
     private function entropiaPorAtributo($tbl, $classe){
         $sql = "show columns from {$tbl}";
         $atributos = $this->con->query($sql)->fetchAll(PDO::FETCH_OBJ);
-
+    
         $sqlAll = "select * from {$tbl}";
         $dados = $this->con->query($sqlAll)->fetchAll(PDO::FETCH_OBJ);
         $total = count($dados);
         $entropias = [];
-
+    
         foreach($atributos as $atributo){
             $attr = $atributo->Field;
             if($attr == $classe) continue;
-
+    
             $sql = "SELECT DISTINCT {$attr} FROM {$tbl}";
             $valores = $this->con->query($sql)->fetchAll(PDO::FETCH_OBJ);
-
+    
             $soma = 0;
             foreach($valores as $v){
                 $valor = $v->$attr;
@@ -130,12 +130,15 @@ class funcoes{
                 $entGrupo = $this->calcularEntropia($grupo, $classe);
                 $soma += ($countGrupo / $total) * $entGrupo;
             }
-
-            $entropias[$attr] = round($soma, 4);
+    
+            if($soma > 0){
+                $entropias[$attr] = round($soma, 4);
+            }
         }
-
+    
         return $entropias;
     }
+
 
     public function grupoPorAtributo(){
         $classe = $_POST["atributos"];
