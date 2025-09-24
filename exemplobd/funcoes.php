@@ -16,6 +16,62 @@ class funcoes{
         }
         return $tabelas;
     }
+
+    public function criarConjuntos(){
+        $tbl = $_POST["tabela"];
+    
+        // Pega as colunas da tabela
+        $sql = "SHOW COLUMNS FROM " . $tbl;
+        $atributos = $this->con->query($sql)->fetchAll(PDO::FETCH_OBJ);
+    
+        $conjuntos = [];
+    
+        foreach ($atributos as $atributo) {
+            if ($atributo->Key != "PRI"){
+                $sql = "SELECT DISTINCT " . $atributo->Field . " FROM " . $tbl;
+                $val = $this->con->query($sql)->fetchAll(PDO::FETCH_OBJ);
+    
+                foreach ($val as $v){
+                    $valor = $v->{$atributo->Field};
+    
+                    $sqlDados = "SELECT * FROM {$tbl} WHERE {$atributo->Field} = :valor";
+                    $stmt = $this->con->prepare($sqlDados);
+                    $stmt->bindParam(':valor', $valor);
+                    $stmt->execute();
+                    $dados = $stmt->fetchAll(PDO::FETCH_OBJ);
+    
+                    $conjuntos[$atributo->Field][$valor] = $dados;
+                }
+            }
+        }
+    
+        foreach ($conjuntos as $coluna => $valores) {
+            echo "<h3>Coluna: $coluna</h3>";
+            foreach ($valores as $valor => $registros) {
+                echo "<strong style='color:#c00'>Valor: $valor</strong><br>";
+                echo "<table border='1' style='margin-bottom:10px;'>";
+                echo "<tr>";
+                if(count($registros) > 0){
+                    foreach ($registros[0] as $campo => $v){
+                        echo "<th>$campo</th>";
+                    }
+                    echo "</tr>";
+                }
+                foreach ($registros as $i => $registro) {
+                    $bg = ($i % 2 == 0) ? "#f9f9f9" : "#e0e0e0";
+                    echo "<tr style='background:$bg'>";
+                    foreach ($registro as $campo => $v){
+                        echo "<td>$v</td>";
+                    }
+                    echo "</tr>";
+                }
+                echo "</table>";
+            }
+            echo "<hr>";
+        }
+    }
+    
+
     public function selecionarAtributos($tabela){
         $sql = "show columns from " . $tabela;
         $atributos = $this->con->query($sql)->fetchAll(PDO::FETCH_OBJ);
@@ -125,9 +181,12 @@ class funcoes{
         }
     }
 }
+
 if(isset($_REQUEST["id"])){
     if($_REQUEST["id"]==0)
         (new funcoes())->selecionarAtributos($_REQUEST["t"]);
     else if($_REQUEST["id"]==1)
         (new funcoes())->grupoPorAtributo();
+    else if($_REQUEST["id"]==2)
+        (new funcoes())->criarConjuntos();
 }
