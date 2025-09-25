@@ -3,10 +3,11 @@ require_once "conexao.php";
 class funcoes{
     private $con;
 
-    public function __construct()    {
+    public function __construct() {
         $this->con = (new Conexao())->conectar();
     }
-    public function selecionarTabela()    {
+
+    public function selecionarTabela() {
         $sql = "SHOW TABLES";
         $stmt = $this->con->query($sql);
 
@@ -17,63 +18,8 @@ class funcoes{
         return $tabelas;
     }
 
-    public function criarConjuntos(){
-        $tbl = $_POST["tabela"];
-    
-        // Pega as colunas da tabela
-        $sql = "SHOW COLUMNS FROM " . $tbl;
-        $atributos = $this->con->query($sql)->fetchAll(PDO::FETCH_OBJ);
-    
-        $conjuntos = [];
-    
-        foreach ($atributos as $atributo) {
-            if ($atributo->Key != "PRI"){
-                $sql = "SELECT DISTINCT " . $atributo->Field . " FROM " . $tbl;
-                $val = $this->con->query($sql)->fetchAll(PDO::FETCH_OBJ);
-    
-                foreach ($val as $v){
-                    $valor = $v->{$atributo->Field};
-    
-                    $sqlDados = "SELECT * FROM {$tbl} WHERE {$atributo->Field} = :valor";
-                    $stmt = $this->con->prepare($sqlDados);
-                    $stmt->bindParam(':valor', $valor);
-                    $stmt->execute();
-                    $dados = $stmt->fetchAll(PDO::FETCH_OBJ);
-    
-                    $conjuntos[$atributo->Field][$valor] = $dados;
-                }
-            }
-        }
-    
-        foreach ($conjuntos as $coluna => $valores) {
-            echo "<h3>Coluna: $coluna</h3>";
-            foreach ($valores as $valor => $registros) {
-                echo "<strong style='color:#c00'>Valor: $valor</strong><br>";
-                echo "<table border='1' style='margin-bottom:10px;'>";
-                echo "<tr>";
-                if(count($registros) > 0){
-                    foreach ($registros[0] as $campo => $v){
-                        echo "<th>$campo</th>";
-                    }
-                    echo "</tr>";
-                }
-                foreach ($registros as $i => $registro) {
-                    $bg = ($i % 2 == 0) ? "#f9f9f9" : "#e0e0e0";
-                    echo "<tr style='background:$bg'>";
-                    foreach ($registro as $campo => $v){
-                        echo "<td>$v</td>";
-                    }
-                    echo "</tr>";
-                }
-                echo "</table>";
-            }
-            echo "<hr>";
-        }
-    }
-    
-
     public function selecionarAtributos($tabela){
-        $sql = "show columns from " . $tabela;
+        $sql = "SHOW COLUMNS FROM " . $tabela;
         $atributos = $this->con->query($sql)->fetchAll(PDO::FETCH_OBJ);
         $attr = "";
         foreach ($atributos as $atributo) {
@@ -82,67 +28,10 @@ class funcoes{
         echo $attr;
     }
 
-    private function calcularEntropia($dados, $classe){
-        $total = count($dados);
-        if($total == 0) return 0;
-
-        $contagem = [];
-        foreach($dados as $dado){
-            $valorClasse = $dado->$classe;
-            if(!isset($contagem[$valorClasse])){
-                $contagem[$valorClasse] = 0;
-            }
-            $contagem[$valorClasse]++;
-        }
-
-        $entropia = 0;
-        foreach($contagem as $c){
-            $p = $c / $total;
-            if($p > 0) $entropia -= $p * log($p, 2);
-        }
-        return $entropia;
-    }
-
-    private function entropiaPorAtributo($tbl, $classe){
-        $sql = "show columns from {$tbl}";
-        $atributos = $this->con->query($sql)->fetchAll(PDO::FETCH_OBJ);
-    
-        $sqlAll = "select * from {$tbl}";
-        $dados = $this->con->query($sqlAll)->fetchAll(PDO::FETCH_OBJ);
-        $total = count($dados);
-        $entropias = [];
-    
-        foreach($atributos as $atributo){
-            $attr = $atributo->Field;
-            if($attr == $classe) continue;
-    
-            $sql = "SELECT DISTINCT {$attr} FROM {$tbl}";
-            $valores = $this->con->query($sql)->fetchAll(PDO::FETCH_OBJ);
-    
-            $soma = 0;
-            foreach($valores as $v){
-                $valor = $v->$attr;
-                $grupo = array_filter($dados, function($d) use ($attr, $valor){
-                    return (string)$d->$attr === (string)$valor;
-                });
-                $countGrupo = count($grupo);
-                if($countGrupo == 0) continue;
-                $entGrupo = $this->calcularEntropia($grupo, $classe);
-                $soma += ($countGrupo / $total) * $entGrupo;
-            }
-    
-            if($soma > 0){
-                $entropias[$attr] = round($soma, 4);
-            }
-        }
-    
-        return $entropias;
-    }
-
-
     public function grupoPorAtributo(){
-        $classe = $_POST["atributos"];
         $tbl = $_POST["tabela"];
+        $classe = "quarto_escolhido";
+        $atributos = $this->getAtributos($tbl);
 
         $sql = "SELECT DISTINCT {$classe} FROM {$tbl};";
         $val = $this->con->query($sql)->fetchAll(PDO::FETCH_OBJ);
@@ -163,25 +52,68 @@ class funcoes{
             echo "</tr>";
         }
         echo "</table>";
+        $entropias = [];
+        foreach ($atributos as $atrib) {
+            // ignora id, codigo e a classe
+            if (!in_array($atrib, ["id", "codigo", $classe])) {
+                $entropias[$atrib] = $this->calcularEntropia($tbl, $atrib, $classe);
+            }
+        }
 
-        $entropias = $this->entropiaPorAtributo($tbl, $classe);
-
+        // mostrar todas as entropias
         echo "<h3>Entropias por atributo:</h3>";
-        echo "<table border='1'><tr><th>Atributo</th><th>Entropia</th></tr>";
-        foreach($entropias as $atrib => $valor){
-            echo "<tr><td>{$atrib}</td><td>{$valor}</td></tr>";
+        echo "<table border='1' cellpadding='5'><tr><th>Atributo</th><th>Entropia</th></tr>";
+        foreach ($entropias as $atrib => $val) {
+            echo "<tr><td>{$atrib}</td><td>{$val}</td></tr>";
         }
-        echo "</table>";
+        echo "</table><br>";
 
-        if(count($entropias) > 0){
-            $minVal = min($entropias);
-            $menorAttrArr = array_keys($entropias, $minVal);
-            $menorAttr = $menorAttrArr[0];
-            $menorVal = $entropias[$menorAttr];
-            echo "<p><b>O atributo escolhido como raiz é {$menorAttr} porque sua entropia foi {$menorVal}.</b></p>";
-        } else {
-            echo "<p>Nenhum atributo disponível para cálculo de entropia.</p>";
+        asort($entropias);
+        $raiz = key($entropias);
+        $valor = current($entropias);
+
+        echo "<h3>O atributo escolhido como raiz é <b>{$raiz}</b> porque sua entropia foi <b>{$valor}</b></h3>";
+    }
+
+    private function getAtributos($tabela){
+        $sql = "SHOW COLUMNS FROM {$tabela}";
+        $atributos = $this->con->query($sql)->fetchAll(PDO::FETCH_OBJ);
+        $cols = [];
+        foreach ($atributos as $a) {
+            $cols[] = $a->Field;
         }
+        return $cols;
+    }
+
+    private function calcularEntropia($tabela, $atributo, $classe){
+        $sql = "SELECT DISTINCT {$atributo} FROM {$tabela}";
+        $valores = $this->con->query($sql)->fetchAll(PDO::FETCH_COLUMN);
+
+        $totalRegistros = $this->con->query("SELECT COUNT(*) FROM {$tabela}")->fetchColumn();
+        $entropiaTotal = 0;
+
+        foreach ($valores as $valor) {
+            $sql = "SELECT COUNT(*) FROM {$tabela} WHERE {$atributo} = " . $this->con->quote($valor);
+            $totalGrupo = $this->con->query($sql)->fetchColumn();
+
+            $sql = "SELECT {$classe}, COUNT(*) as qtd 
+                    FROM {$tabela} 
+                    WHERE {$atributo} = " . $this->con->quote($valor) . " 
+                    GROUP BY {$classe}";
+            $classes = $this->con->query($sql)->fetchAll(PDO::FETCH_ASSOC);
+
+            $entropiaGrupo = 0;
+            foreach ($classes as $c) {
+                $p = $c["qtd"] / $totalGrupo;
+                if ($p > 0) {
+                    $entropiaGrupo += -$p * log($p, 2);
+                }
+            }
+
+            $entropiaTotal += ($totalGrupo / $totalRegistros) * $entropiaGrupo;
+        }
+
+        return round($entropiaTotal, 4);
     }
 }
 
@@ -190,6 +122,4 @@ if(isset($_REQUEST["id"])){
         (new funcoes())->selecionarAtributos($_REQUEST["t"]);
     else if($_REQUEST["id"]==1)
         (new funcoes())->grupoPorAtributo();
-    else if($_REQUEST["id"]==2)
-        (new funcoes())->criarConjuntos();
 }
